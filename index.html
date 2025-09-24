@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operation Tack Fast</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f0f0; text-align: center; }
+    button { background: #007bff; color: white; border: none; padding: 8px 16px; font-size: 14px; border-radius: 6px; margin: 4px; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    ul { list-style: none; padding: 0; max-width: 400px; margin: 0 auto; }
+    li { background: white; margin: 10px auto; padding: 15px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 15px; }
+    .hidden { display: none; }
+    /* Thumbnails (main list) */
+    img { 
+      max-width: 100%; 
+      height: auto; 
+      max-height: 120px; 
+      margin: 10px 0; 
+    }
+    /* Larger image on the detail page */
+    #detail img {
+      max-height: 500px;   /* make it taller */
+      max-width: 90%;      /* allow it to fill width */
+      width: auto;
+      margin: 20px auto;
+      display: block;
+      object-fit: contain;
+    }
+    #cartTotal { font-weight: bold; font-size: 20px; }
+    textarea, input[type="file"] { width: 90%; margin: 10px 0; font-size: 16px; }
+    .cart-controls { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    select { padding: 6px 10px; font-size: 14px; margin-bottom: 15px; }
+  </style>
+</head>
+<body>
+  <!-- Home -->
+  <div id="home">
+    <h1>Operation Tack Fast</h1>
+    <p style="font-size:14px;">Powered by AOI Designs</p>
+    <button onclick="showMain()">Enter</button>
+  </div>
+
+  <!-- Main -->
+  <div id="main" class="hidden">
+    <h2>Parts List</h2>
+    <button onclick="showCart()">View Cart</button> <!-- ✅ NEW TOP BUTTON -->
+    <select id="groupFilter" onchange="filterParts()">
+      <option value="">All Groups</option>
+    </select>
+    <ul id="partsList"></ul>
+    <button onclick="showCart()">View Cart</button> <!-- ✅ KEEP EXISTING AT BOTTOM -->
+    <button onclick="showNewItem()">New Item Request</button>
+  </div>
+
+  <!-- Detail -->
+  <div id="detail" class="hidden">
+    <button onclick="showMain()">Back to Search</button>
+    <h2 id="partName"></h2>
+    <img id="partImg" src="" alt="Part image" />
+    <p><strong>CIP #:</strong> <span id="cip"></span></p>
+    <p><strong>Material:</strong> <span id="material"></span></p>
+    <p><strong>Layer Height:</strong> <span id="layer"></span></p>
+    <p><strong>Wall Loops:</strong> <span id="walls"></span></p>
+    <p><strong>Infill Density:</strong> <span id="infill"></span></p>
+    <p><strong>Infill Pattern:</strong> <span id="pattern"></span></p>
+    <p><strong>Supports:</strong> <span id="supports"></span></p>
+
+    <div style="margin-top:10px;">
+      <label for="qtyInput" style="font-size:14px; margin-right:6px;">Qty:</label>
+      <input type="number" id="qtyInput" value="1" min="1" style="width:60px; text-align:center;">
+    </div>
+
+    <button onclick="addToCart(currentPart)">Add to Cart</button>
+    <button onclick="showCart()">View Cart</button>
+  </div>
+
+  <!-- Cart -->
+  <div id="cart" class="hidden">
+    <button onclick="showMain()">Back to Parts</button>
+    <h2>Your Cart</h2>
+    <ul id="cartItems"></ul>
+    <button onclick="orderNow()">Order Now</button>
+  </div>
+
+  <!-- New Item -->
+  <div id="newItem" class="hidden">
+    <h2>New Item Request</h2>
+    <textarea id="desc" placeholder="Description..." rows="5"></textarea><br>
+    <input type="file" id="newImg" accept="image/*" multiple>
+    <br>
+    <button onclick="submitNewItem()">Submit Request</button>
+    <button onclick="showMain()">Back</button>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script> <!-- ✅ new SDK -->
+  <script>
+    // Init EmailJS
+    (function(){ 
+      emailjs.init("pAEvS9hDhvzaCKBDw"); 
+      console.log("✅ EmailJS initialized");
+    })();
+
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQ8Tg6P9AdQwGtEapcDAN7eZty4JMjl_haBJ4qkt27aU7KAtayv9FqFq8Ggd3Sug_Oc9qtoGCK8D2Ft/pub?gid=1999489547&single=true&output=csv";
+    let parts = [];
+    let cart = JSON.parse(localStorage.getItem("cart")||"[]");
+    let currentPart = null;
+
+    // Load CSV
+    Papa.parse(CSV_URL, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results) {
+        parts = results.data.map(r=>({
+          photo: r["Photo"] ? "img/" + r["Group"].replace("/", "_") + "/" + r["Photo"] : "",
+          group: r["Group"] || "",
+          cip: r["CIP"] || "",
+          name: r["Part Name"] || "",
+          material: r["Material"] || "",
+          layer: r["Layer Height"] || "",
+          walls: r["Wall Loops"] || "",
+          infill: r["Infill Density"] || "",
+          pattern: r["Infill Pattern"] || "",
+          supports: r["Supports Yes/No"] || "",
+          price: r["Total Item Cost"] ? parseFloat(r["Total Item Cost"]) : 0
+        }));
+        renderGroupOptions();
+        renderParts();
+      },
+      error: function(err) {
+        alert("Failed to load parts. Check your published CSV URL.");
+        console.error(err);
+      }
+    });
+
+    function renderGroupOptions(){
+      const select = document.getElementById("groupFilter");
+      const groups = [...new Set(parts.map(p=>p.group).filter(Boolean))];
+      groups.sort();
+      groups.forEach(g=>{
+        const opt=document.createElement("option");
+        opt.value=g;
+        opt.textContent=g;
+        select.appendChild(opt);
+      });
+    }
+
+    function filterParts(){
+      const group = document.getElementById("groupFilter").value;
+      renderParts(group);
+    }
+
+    function showMain(){ hideAll(); document.getElementById("main").classList.remove("hidden"); renderParts(); }
+    function showDetail(part){ currentPart=part; hideAll(); document.getElementById("detail").classList.remove("hidden");
+      document.getElementById("partName").textContent=part.name;
+      document.getElementById("partImg").src=part.photo;
+      document.getElementById("cip").textContent=part.cip;
+      document.getElementById("material").textContent=part.material;
+      document.getElementById("layer").textContent=part.layer;
+      document.getElementById("walls").textContent=part.walls;
+      document.getElementById("infill").textContent=part.infill;
+      document.getElementById("pattern").textContent=part.pattern;
+      document.getElementById("supports").textContent=part.supports;
+    }
+    function showCart(){ hideAll(); document.getElementById("cart").classList.remove("hidden"); renderCart(); }
+    function showNewItem(){ hideAll(); document.getElementById("newItem").classList.remove("hidden"); }
+
+    function renderParts(filterGroup=""){
+      const list=document.getElementById("partsList"); 
+      list.innerHTML="";
+      parts.filter(p=>!filterGroup || p.group===filterGroup).forEach(part=>{
+        if(!part.name) return; // skip blanks
+        const li=document.createElement("li");
+        li.innerHTML = `
+          <img src="${part.photo}" alt="${part.name}" style="max-height:120px; max-width:120px; object-fit:contain; flex-shrink:0;">
+          <div style="flex:1; text-align:left;">
+            <strong>${part.name}</strong><br>
+            <span style="font-size:14px; color:#555;">CIP: ${part.cip}</span>
+            <div style="margin-top:8px;">
+              <button onclick='showDetail(${JSON.stringify(part)})'>View</button>
+              <button onclick='addToCart(${JSON.stringify(part)})'>Add</button>
+            </div>
+          </div>
+        `;
+        list.appendChild(li);
+      });
+    }
+
+    function addToCart(part){
+      let idx=cart.findIndex(c=>c.name===part.name);
+      if(idx>-1){ cart[idx].qty++; } else { cart.push({...part, qty:1}); }
+      localStorage.setItem("cart",JSON.stringify(cart));
+      renderCart();
+      alert("Added to cart!");
+    }
+
+    function addToCartWithQty(){
+      const qty = parseInt(document.getElementById("qtyInput").value) || 1;
+      let idx = cart.findIndex(c=>c.name===currentPart.name);
+      if(idx > -1){ 
+        cart[idx].qty += qty; 
+      } else { 
+        cart.push({...currentPart, qty: qty}); 
+      }
+      localStorage.setItem("cart", JSON.stringify(cart));
+      renderCart();
+      alert(`Added ${qty} of ${currentPart.name} to cart!`);
+    }
+
+    function renderCart(){
+  const items=document.getElementById("cartItems"); 
+  items.innerHTML="";
+  cart.forEach((item, index)=>{
+    const li=document.createElement("li");
+    li.style.display = "flex";
+    li.style.alignItems = "center";
+    li.style.gap = "12px";
+
+    li.innerHTML = `
+      <img src="${item.photo}" alt="${item.name}" 
+           style="max-height:60px; max-width:60px; object-fit:contain; flex-shrink:0;">
+      <div style="flex:1; text-align:left;">
+        <strong>${item.name}</strong><br>
+        <span style="font-size:14px; color:#555;">Qty: ${item.qty}</span>
+      </div>
+      <div class="cart-controls">
+        <button onclick="updateQty(${index}, -1)">-</button>
+        <span>${item.qty}</span>
+        <button onclick="updateQty(${index}, 1)">+</button>
+        <button style="background:#dc3545;" onclick="removeItem(${index})">Delete</button>
+      </div>
+    `;
+    items.appendChild(li);
+  });
+}
+
+
+    function updateQty(index, change){
+      cart[index].qty += change;
+      if(cart[index].qty <= 0) cart.splice(index,1);
+      localStorage.setItem("cart",JSON.stringify(cart));
+      renderCart();
+    }
+
+    function removeItem(index){
+      cart.splice(index,1);
+      localStorage.setItem("cart",JSON.stringify(cart));
+      renderCart();
+    }
+
+    function orderNow(){
+      if(cart.length===0){ alert("Cart empty!"); return; }
+      const total=cart.reduce((s,i)=>s+i.price*i.qty,0).toFixed(2);
+      const cartItems=cart.map(i=>`${i.name} x${i.qty}`).join("\n");
+      console.log("📦 Sending order:", cartItems, "Total:", total); // debug log
+      emailjs.send("service_g4u3stf","template_pb77h48",{cartItems,total})
+        .then(()=>{ alert("Quote sent for approval!"); cart=[]; localStorage.removeItem("cart"); showMain(); },
+              err=>alert("Email failed: "+JSON.stringify(err)));
+    }
+
+    function submitNewItem(){
+      const desc=document.getElementById("desc").value;
+      if(!desc){ alert("Enter description"); return; }
+      emailjs.send("service_g4u3stf","template_qiee0be",{description:desc})
+        .then(()=>{ alert("New item request sent!"); document.getElementById("desc").value=""; showMain(); },
+              err=>alert("Failed: "+JSON.stringify(err)));
+    }
+
+    function hideAll(){ document.querySelectorAll("div").forEach(d=>d.classList.add("hidden")); }
+  </script>
+</body>
+</html>
